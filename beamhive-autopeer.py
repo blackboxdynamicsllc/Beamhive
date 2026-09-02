@@ -2,19 +2,24 @@
 """beamhive-federation-peer.py -- a minimal, dependency-free BeamHive
 federation peer.
 
-This speaks *only* the small federation discovery protocol that
-beamhive-server.py implements (see the "BeamHive server federation"
-section in that file) -- nothing else. It carries none of the mission,
-BBS, mail, or Reticulum machinery, so it's cheap to run anywhere you just
-want another dot on the federation map: a spare VPS, a Raspberry Pi, a
-box with no telescope attached at all. Real BeamHive servers that crawl
-this peer can't tell the difference from a full instance; they only ever
-call GET /federation/info and GET /federation/peers.
+This speaks *only* the small federation discovery and mission-listing
+protocol that beamhive-server.py implements (see the "BeamHive server
+federation" section in that file) -- nothing else. It carries none of
+the mission, BBS, mail, or Reticulum machinery, so it's cheap to run
+anywhere you just want another dot on the federation map: a spare VPS, a
+Raspberry Pi, a box with no telescope attached at all. Real BeamHive
+servers that crawl this peer can't tell the difference from a full
+instance; they only ever call GET /federation/info, GET
+/federation/peers, and GET /federation/community-missions -- the last of
+which this peer always answers with an empty list, a real, complete
+response rather than an error, since it runs no telescope and has no
+missions of its own to contribute.
 
 Protocol recap (kept identical to the real server so crawling is a
 drop-in match):
   GET /federation/info  -> {"ok": true, "server_id", "name", "software", "url"}
   GET /federation/peers -> {"ok": true, "peers": [{"server_id","url","name"}, ...]}
+  GET /federation/community-missions -> {"ok": true, "server_id", "name", "missions": []}
 
 Usage:
   python3 beamhive-federation-peer.py --port 8420 --name "My Peer" \
@@ -163,6 +168,23 @@ def self_info():
         "name": state["name"],
         "software": SOFTWARE_NAME,
         "url": state["public_url"] or "",
+    }
+
+
+def community_missions_response():
+    """GET /federation/community-missions -- a real BeamHive server's
+    mission-federation crawl (see _federation_missions_refresh_once in
+    beamhive-server.py) polls every known peer for this. This peer never
+    runs any telescope and carries no mission data at all (see the module
+    docstring), so it always answers with an empty list -- a real,
+    complete response in the same shape a full server would give, not an
+    error -- so a crawling server's poll of this peer just contributes
+    nothing rather than logging it as unreachable or malformed."""
+    return {
+        "ok": True,
+        "server_id": state["server_id"],
+        "name": state["name"],
+        "missions": [],
     }
 
 
@@ -323,6 +345,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/federation/peers":
             self._json(200, peers_response())
             return
+        if path == "/federation/community-missions":
+            self._json(200, community_missions_response())
+            return
         if path == "/":
             self._json(200, {"ok": True, "software": SOFTWARE_NAME, **self_info()})
             return
@@ -373,3 +398,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+(venv) root@BeamHivePrimary:~/beamhive# 
+
