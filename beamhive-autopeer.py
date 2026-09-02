@@ -204,6 +204,13 @@ def add_or_update_peer(server_id, url, name, mark_seen, ping_ms=None):
 
 
 def add_peer_by_url(url):
+    """Verifies a candidate peer is actually a live, reachable BeamHive
+    server before trusting anything it claims about itself -- backs both
+    the --seed startup flag and POST /federation/announce (see the
+    Handler below). The MAX_PEERS check matters here specifically
+    because /federation/announce is unauthenticated and reachable by
+    anyone: without it, enough distinct reachable "BeamHive" responders
+    could grow federation_peer_peers.json without bound."""
     if not valid_federation_url(url):
         return False, "invalid URL (must be http:// or https://)"
     own_id = state["server_id"]
@@ -218,6 +225,8 @@ def add_peer_by_url(url):
         return False, "peer did not return a server_id"
     if server_id == own_id:
         return False, "that's this server's own address"
+    if server_id not in load_peers() and len(load_peers()) >= MAX_PEERS:
+        return False, "this server already knows the maximum number of peers"
     peer = add_or_update_peer(server_id, url, info.get("name"), mark_seen=True, ping_ms=ping_ms)
     return True, dict(peer, server_id=server_id)
 
@@ -350,6 +359,38 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/":
             self._json(200, {"ok": True, "software": SOFTWARE_NAME, **self_info()})
+            return
+        self._json(404, {"ok": False, "error": "not found"})
+
+    def do_POST(self):
+        path = urllib.parse.urlsplit(self.path).path
+        if path == "/federation/announce":
+            # Unauthenticated by design -- the push half of gossip
+            # discovery (see beamhive-server.py's _federation_announce_
+            # self_to and matching /federation/announce route). Safe to
+            # expose without auth because trust never comes from the
+            # request body -- add_peer_by_url always calls back out to the
+            # claimed url's own /federation/info and only adds it if that
+            # independently confirms a live, self-consistent BeamHive
+            # server, exactly the same verification --seed gets at
+            # startup.
+            body = {}
+            try:
+                n = int(self.headers.get("Content-Length", "0") or "0")
+                if n:
+                    raw = self.rfile.read(n).decode("utf-8")
+                    if raw.strip():
+                        body = json.loads(raw)
+            except Exception:
+                body = {}
+            if not isinstance(body, dict):
+                body = {}
+            url = str(body.get("url") or "").strip()
+            ok, result = add_peer_by_url(url)
+            if not ok:
+                self._json(400, {"ok": False, "error": result})
+                return
+            self._json(200, {"ok": True, "peer": result})
             return
         self._json(404, {"ok": False, "error": "not found"})
 
