@@ -402,6 +402,18 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/federation/community-missions":
             self._json(200, community_missions_response())
             return
+        if path == "/mission-activity":
+            # Real beamhive-server.py instances poll every known peer's
+            # /mission-activity every few seconds to gate the Execute
+            # On-Demand Mission button federation-wide (see
+            # _federation_busy_refresh_once in beamhive-server.py). This
+            # peer runs no telescope at all (see the module docstring),
+            # so "not busy" is always the correct, real answer -- not
+            # just a stub -- and answering it here (instead of 404ing)
+            # means one fewer guaranteed-failing request every cycle for
+            # every real server that has this as a peer.
+            self._json(200, {"busy": False, "federated_busy": False})
+            return
         if path == "/":
             self._json(200, {"ok": True, "software": SOFTWARE_NAME, **self_info()})
             return
