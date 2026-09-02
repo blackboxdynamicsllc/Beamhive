@@ -52,6 +52,18 @@ MAX_RESPONSE_BYTES = 200_000
 NAME_MAX_CHARS = 80
 URL_MAX_CHARS = 300
 
+# Render's convention for a mounted persistent disk (its "Disk" feature
+# defaults new disks to this mount path). Without a real persistent disk
+# behind it this is just another ephemeral directory like any other --
+# provisioning the disk on Render's dashboard is a separate, manual
+# step this script can't do for you -- but defaulting to this path means
+# no extra env var/flag is needed once that disk exists: identity
+# (federation_peer_id.txt) and the known-peers list
+# (federation_peer_peers.json) survive restarts and redeploys instead of
+# resetting every time, which otherwise means this peer can never hold
+# onto anyone long enough to be useful as a federation bootstrap point.
+DEFAULT_DATA_DIR = "/var/data"
+
 peers_lock = threading.Lock()
 state = {
     "server_id": None,
@@ -65,6 +77,31 @@ state = {
 
 
 # --- persistence -------------------------------------------------------
+
+def resolve_data_dir(requested):
+    """Makes sure `requested` (DEFAULT_DATA_DIR unless overridden by
+    --data-dir/DATA_DIR) is actually usable before committing to it,
+    falling back to the directory this script lives in rather than
+    crashing outright -- DEFAULT_DATA_DIR only behaves like a real
+    persistent disk once one is actually mounted there on Render's end;
+    run anywhere else (a plain VPS, locally) with nothing mounted at
+    /var/data and creating it would either fail outright (no permission
+    to create a top-level directory) or silently succeed as just another
+    ephemeral path, which is no better than the old default and worth a
+    visible warning rather than pretending it's persistent."""
+    try:
+        os.makedirs(requested, exist_ok=True)
+        probe = os.path.join(requested, ".write_test")
+        with open(probe, "w", encoding="utf-8") as f:
+            f.write("")
+        os.remove(probe)
+        return requested
+    except Exception as e:
+        fallback = os.path.dirname(os.path.abspath(__file__))
+        print(f"[warn] {requested} isn't writable here ({e}); falling back to {fallback} -- "
+              f"identity and known peers won't survive a restart there")
+        return fallback
+
 
 def load_server_id():
     try:
@@ -411,11 +448,15 @@ def main():
     ap.add_argument("--public-url", default=os.environ.get("PUBLIC_URL", ""))
     ap.add_argument("--seed", action="append", default=[],
                      help="URL of an existing BeamHive server to bootstrap discovery from; repeatable")
-    ap.add_argument("--data-dir", default=os.environ.get("DATA_DIR", os.path.dirname(os.path.abspath(__file__))))
+    ap.add_argument("--data-dir", default=os.environ.get("DATA_DIR", DEFAULT_DATA_DIR),
+                     help=f"where federation_peer_id.txt / federation_peer_peers.json live "
+                          f"(default: {DEFAULT_DATA_DIR}, Render's persistent-disk mount "
+                          f"convention -- falls back to this script's own directory if that "
+                          f"path isn't actually writable here)")
     ap.add_argument("--crawl-interval", type=int, default=CRAWL_INTERVAL_SECONDS)
     args = ap.parse_args()
 
-    os.makedirs(args.data_dir, exist_ok=True)
+    args.data_dir = resolve_data_dir(args.data_dir)
     state["data_dir"] = args.data_dir
     state["id_file"] = os.path.join(args.data_dir, "federation_peer_id.txt")
     state["peers_file"] = os.path.join(args.data_dir, "federation_peer_peers.json")
@@ -447,4 +488,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
