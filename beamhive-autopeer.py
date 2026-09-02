@@ -331,12 +331,20 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _maybe_autoseed_public_url(self):
+        # Defaults to http, not https, when nothing upstream sets
+        # X-Forwarded-Proto: this script never terminates TLS itself, so a
+        # request reaching it with no reverse proxy in front genuinely
+        # arrived over plain HTTP. Guessing https for a bare-IP or
+        # otherwise proxy-less deployment (the common case for this
+        # script -- see the module docstring) seeds a public_url nobody
+        # can ever reach, which silently breaks --seed/announce
+        # verification for it with no visible error (see add_peer_by_url).
         if state["public_url"]:
             return
         host = self.headers.get("Host")
         if not host:
             return
-        proto = self.headers.get("X-Forwarded-Proto") or "https"
+        proto = self.headers.get("X-Forwarded-Proto") or "http"
         candidate = f"{proto}://{host}"
         if not valid_federation_url(candidate):
             return
@@ -439,3 +447,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
