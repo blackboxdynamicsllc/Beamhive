@@ -414,6 +414,18 @@ class Handler(BaseHTTPRequestHandler):
             # every real server that has this as a peer.
             self._json(200, {"busy": False, "federated_busy": False})
             return
+        if path == "/federation/scheduled-missions":
+            # Real beamhive-server.py instances poll every known peer's
+            # /federation/scheduled-missions every ~20s so a timeslot
+            # booked on one server is unavailable on every other one too
+            # (see _federation_schedules_refresh_once in beamhive-
+            # server.py). This peer runs no telescope and has no
+            # scheduling of its own (see the module docstring), so an
+            # empty list is always the correct, real answer -- same
+            # reasoning as /mission-activity and /federation/community-
+            # missions above.
+            self._json(200, {"ok": True, "server_id": state["server_id"], "name": state["name"], "schedules": []})
+            return
         if path == "/":
             self._json(200, {"ok": True, "software": SOFTWARE_NAME, **self_info()})
             return
