@@ -465,10 +465,10 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Minimal standalone BeamHive federation peer")
+    ap = argparse.ArgumentParser(description="Minimal standalone BeamHive Network Bootstrap")
     ap.add_argument("--port", type=int, default=int(os.environ.get("PORT", "8420")))
     ap.add_argument("--bind", default=os.environ.get("BIND", "0.0.0.0"))
-    ap.add_argument("--name", default=os.environ.get("PEER_NAME", "BeamHive Federation Peer"))
+    ap.add_argument("--name", default=os.environ.get("PEER_NAME", "BeamHive Network Bootstrap"))
     ap.add_argument("--public-url", default=os.environ.get("PUBLIC_URL", ""))
     ap.add_argument("--seed", action="append", default=[],
                      help="URL of an existing BeamHive server to bootstrap discovery from; repeatable")
